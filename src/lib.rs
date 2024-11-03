@@ -38,6 +38,14 @@ impl<'a> ApplicationHandler for StateApplication<'a>{
 
         if window.id() == window_id {
             match event {
+                WindowEvent::CursorMoved { position, .. } => {
+                    self.state.as_mut().unwrap().clear_color = wgpu::Color {
+                        r: position.x / self.state.as_ref().unwrap().size.width as f64,
+                        g: position.y / self.state.as_ref().unwrap().size.height as f64,
+                        b: 0.3,
+                        a: 1.0,
+                    };
+                }
                 WindowEvent::CloseRequested => {
                     event_loop.exit();
                 }
@@ -65,6 +73,7 @@ struct State<'a> {
     config: wgpu::SurfaceConfiguration,
 
     size: PhysicalSize<u32>,
+    clear_color: wgpu::Color,
     window: Arc<Window>,
 }
 
@@ -78,6 +87,7 @@ impl<'a> State<'a> {
         let (device, queue) = Self::create_device(&adapter);
         let surface_caps = surface.get_capabilities(&adapter);
         let config = Self::create_surface_config(size, surface_caps);
+        let clear_color = wgpu::Color::BLACK;
         surface.configure(&device, &config);
 
         Self {
@@ -86,6 +96,7 @@ impl<'a> State<'a> {
             queue,
             config,
             size,
+            clear_color,
             window: window_arc,
         }
     }
@@ -163,12 +174,7 @@ impl<'a> State<'a> {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 1.0,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(self.clear_color),
                         store: wgpu::StoreOp::Store,
                     }
                 })],
