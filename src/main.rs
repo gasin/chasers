@@ -1,5 +1,6 @@
 use wgpu_gallary::run;
+use pollster::block_on;
 
 fn main() {
-    run();
+    block_on(run());
 }
