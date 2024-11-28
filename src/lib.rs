@@ -69,6 +69,9 @@ struct State<'a> {
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
+    texture_bind_group_layout: wgpu::BindGroupLayout,
+    diffuse_texture: wgpu::Texture,
+    frame_cnt: usize,
 
     diffuse_bind_group: wgpu::BindGroup,
 
@@ -222,13 +225,15 @@ impl<'a> State<'a> {
             cache: None,
         });
 
-
         Self {
             surface,
             device,
             queue,
             config,
             size,
+            texture_bind_group_layout,
+            diffuse_texture,
+            frame_cnt: 0,
             render_pipeline,
             diffuse_bind_group,
             window: window_arc,
@@ -290,6 +295,71 @@ impl<'a> State<'a> {
 
         self.surface.configure(&self.device, &self.config);
 
+        let texture_size = wgpu::Extent3d {
+            width: self.config.width,
+            height: self.config.height,
+            depth_or_array_layers: 1,
+        };
+        let diffuse_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Diffuse Texture"),
+            size: texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        let white_data = vec![((self.frame_cnt / 10 as usize) % 256 as usize) as u8; (self.config.width * self.config.height * 4) as usize];
+
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &diffuse_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &white_data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * self.config.width),
+                rows_per_image: Some(self.config.height),
+            },
+            texture_size,
+        );
+
+        let diffuse_texture_view = diffuse_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let diffuse_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let diffuse_bind_group = self.device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &self.texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&diffuse_texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&diffuse_sampler),
+                    }
+                ],
+                label: Some("diffuse_bind_group"),
+            }
+        );
+
+        self.diffuse_texture = diffuse_texture;
+        self.diffuse_bind_group = diffuse_bind_group;
+
         println!("Resized to {:?} from state!", new_size);
     }
 
@@ -297,6 +367,29 @@ impl<'a> State<'a> {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        self.frame_cnt += 1;
+        let white_data = vec![((self.frame_cnt / 10 as usize) % 256 as usize) as u8; (self.config.width * self.config.height * 4) as usize];
+        let texture_size = wgpu::Extent3d {
+            width: self.config.width,
+            height: self.config.height,
+            depth_or_array_layers: 1,
+        };
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.diffuse_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &white_data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * self.config.width),
+                rows_per_image: Some(self.config.height),
+            },
+            texture_size,
+        );
+
         let output = self.surface.get_current_texture().unwrap();
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
